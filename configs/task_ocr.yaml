@@ -1,0 +1,11 @@
+﻿camera:
+  index: 0
+
+run:
+  max_frames: 120
+
+task:
+  name: ocr
+  libraries:
+    - tesseract
+    - easyocr

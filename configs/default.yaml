@@ -1,0 +1,20 @@
+﻿camera:
+  index: 0
+
+run:
+  max_frames: 120
+
+comparison:
+  tasks:
+    - object_recognition
+    - ocr
+    - human_cues
+  libraries:
+    - opencv
+    - mediapipe
+    - tesseract
+    - easyocr
+  conditions:
+    - bright_still_clean_mid
+    - normal_moving_clutter_mid
+    - dim_moving_clutter_far

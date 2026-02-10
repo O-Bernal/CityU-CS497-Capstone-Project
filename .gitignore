@@ -1,0 +1,27 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Runtime data
+data/raw/*
+data/processed/*
+data/logs/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/logs/.gitkeep
+
+# Results
+results/tables/*
+results/figures/*
+results/summaries/*
+!results/tables/.gitkeep
+!results/figures/.gitkeep
+!results/summaries/.gitkeep
+
+# IDE
+.vscode/
+.idea/
