@@ -10,9 +10,11 @@ venv/
 data/raw/*
 data/processed/*
 data/logs/*
+data/captures/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/logs/.gitkeep
+!data/captures/.gitkeep
 
 # Results
 results/tables/*

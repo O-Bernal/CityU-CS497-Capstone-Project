@@ -5,15 +5,19 @@ run:
   max_frames: 120
 
 comparison:
-  tasks:
-    - object_recognition
-    - ocr
-    - human_cues
-  libraries:
-    - opencv
-    - mediapipe
-    - tesseract
-    - easyocr
+  max_frames: 150
+  max_seconds: 5
+  repeats: 2
+  interactive_conditions: true
+  condition_preview: true
+  pause_after_run: true
+  show_preview: true
+  record_video: true
+  video_dir: data/captures
+  task_libraries:
+    object_recognition:
+      - opencv
+      - mediapipe
   conditions:
     - bright_still_clean_mid
     - normal_moving_clutter_mid

@@ -1,7 +1,5 @@
 ﻿"""Shared webcam wrapper for opening, reading, and releasing camera streams."""
 
-import cv2
-
 
 class Camera:
     """Minimal camera abstraction used by runners and demos."""
@@ -12,10 +10,23 @@ class Camera:
         self.cap = None
 
     def open(self) -> None:
-        """Open the configured webcam index."""
-        self.cap = cv2.VideoCapture(self.index)
-        if not self.cap.isOpened():
-            raise RuntimeError(f"Unable to open webcam index {self.index}")
+        """Open the configured webcam index with Windows-friendly backend fallback."""
+        import cv2
+
+        # Windows MSMF can be very slow/unstable on some webcams; prefer DirectShow first.
+        cap = cv2.VideoCapture(self.index, cv2.CAP_DSHOW)
+        if cap.isOpened():
+            self.cap = cap
+            return
+
+        cap.release()
+        cap = cv2.VideoCapture(self.index)
+        if cap.isOpened():
+            self.cap = cap
+            return
+
+        cap.release()
+        raise RuntimeError(f"Unable to open webcam index {self.index}")
 
     def read(self):
         """Read a single frame from the active webcam stream."""

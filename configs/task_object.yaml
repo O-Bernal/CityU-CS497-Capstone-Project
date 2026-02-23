@@ -2,10 +2,12 @@
   index: 0
 
 run:
-  max_frames: 120
+  max_frames: 300
+  max_seconds: 15
 
 task:
   name: object_recognition
+  library: opencv
   libraries:
     - opencv
     - mediapipe

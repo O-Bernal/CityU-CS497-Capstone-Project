@@ -6,6 +6,7 @@ run:
 
 task:
   name: human_cues
+  library: opencv
   libraries:
     - opencv
     - mediapipe

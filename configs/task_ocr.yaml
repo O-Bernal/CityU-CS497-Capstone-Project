@@ -6,6 +6,7 @@ run:
 
 task:
   name: ocr
+  library: tesseract
   libraries:
     - tesseract
     - easyocr
