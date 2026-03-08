@@ -2,8 +2,11 @@
   index: 0
 
 run:
-  max_frames: 300
-  max_seconds: 15
+  max_frames: 150
+  max_seconds: 10
+  condition_preview: true
+  pause_after_run: true
+  show_preview: true
 
 task:
   name: object_recognition

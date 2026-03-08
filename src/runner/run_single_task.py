@@ -1,29 +1,23 @@
-﻿"""Run one configured webcam task and write a metrics log for that session."""
+"""Run one configured webcam task and write a structured metrics log."""
 
 import argparse
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+import sys
 import time
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.core.camera import Camera
 from src.core.config import load_config
-from src.core.logging_utils import write_run_log
+from src.core.logging_utils import safe_name, write_run_log
 from src.core.metrics import RunMetrics
 from src.runner.task_selection import select_library
 from src.tasks.interface import TaskResult
 from src.tasks.registry import get_task_runner
-
-
-def _safe_name(text: str) -> str:
-    """Return a filesystem-safe name segment for generated artifacts."""
-    out = []
-    for ch in text.strip().lower():
-        if ch.isalnum() or ch in ("-", "_"):
-            out.append(ch)
-        else:
-            out.append("_")
-    return "".join(out).strip("_") or "run"
 
 
 def _create_video_writer(path: Path, fps: float, size: tuple[int, int]):
@@ -65,16 +59,73 @@ def _draw_detections(preview, detections: list[dict], cv2_module) -> None:
         )
 
 
+def _warm_up_camera(camera: Camera, warmup_frames: int) -> int:
+    """Discard a fixed number of frames before collecting timed metrics."""
+    completed = 0
+    while completed < warmup_frames:
+        ok, _frame = camera.read()
+        if ok:
+            completed += 1
+    return completed
+
+
+def _build_log_stem(task_name: str, library_name: str, condition: str, repeat: int) -> str:
+    """Build a readable log filename stem for one experiment run."""
+    return "_".join(
+        [
+            safe_name(task_name),
+            safe_name(library_name),
+            safe_name(condition),
+            f"r{repeat}",
+        ]
+    )
+
+
+def _build_run_record(
+    *,
+    task_name: str,
+    library_name: str,
+    condition: str,
+    repeat: int,
+    summary: dict,
+    open_ms: float,
+    warmup_frames: int,
+    frames_with_detection: int,
+    label_counts: Counter[str],
+    failed_frames: int,
+    avg_confidence: float | None,
+    resolution: tuple[int | None, int | None],
+    video_path: Path | None,
+) -> dict:
+    """Create a flat record used by JSON logs and CSV summary exports."""
+    frames_processed = int(summary.get("frame_count", 0))
+    duration_s = float(summary.get("duration_s", 0.0))
+    return {
+        "task": task_name,
+        "library": library_name,
+        "condition": condition,
+        "repeat": repeat,
+        "frames_processed": frames_processed,
+        "failed_frames": failed_frames,
+        "duration_s": duration_s,
+        "fps": float(summary.get("fps", 0.0)),
+        "avg_processing_ms": float(summary.get("avg_processing_ms", 0.0)),
+        "webcam_open_ms": open_ms,
+        "warmup_frames": warmup_frames,
+        "frame_width": resolution[0],
+        "frame_height": resolution[1],
+        "frames_with_detection": frames_with_detection,
+        "detection_rate": (frames_with_detection / frames_processed) if frames_processed else 0.0,
+        "label_counts": dict(label_counts),
+        "avg_confidence": avg_confidence,
+        "video_path": str(video_path) if video_path is not None else None,
+        "verdict": None,
+        "notes": None,
+    }
+
+
 def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
     """Execute one task run from an in-memory config and return payload/log path."""
-    run_cfg = cfg.get("run", {})
-    max_frames = int(run_cfg.get("max_frames", 120))
-    max_seconds = run_cfg.get("max_seconds")
-    max_seconds = float(max_seconds) if max_seconds is not None else None
-    record_video = bool(run_cfg.get("record_video", False))
-    show_preview = bool(run_cfg.get("show_preview", False))
-    video_dir = Path(run_cfg.get("video_dir", "data/captures"))
-
     task_cfg = cfg.get("task", {})
     task_name = str(task_cfg.get("name", "")).strip()
     if not task_name:
@@ -83,24 +134,44 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
     library_name = select_library(task_cfg)
     task_runner = get_task_runner(task_name, library_name)
 
+    run_cfg = cfg.get("run", {})
+    max_frames = int(run_cfg.get("max_frames", 120))
+    max_seconds = run_cfg.get("max_seconds")
+    max_seconds = float(max_seconds) if max_seconds is not None else None
+    warmup_frames = int(run_cfg.get("warmup_frames", 0))
+    record_video = bool(run_cfg.get("record_video", False))
+    show_preview = bool(run_cfg.get("show_preview", False))
+    video_dir = Path(run_cfg.get("video_dir", "data/captures"))
+    log_dir = str(run_cfg.get("log_dir", f"data/logs/{safe_name(task_name)}"))
+
     experiment = cfg.get("experiment", {})
     condition = str(experiment.get("condition", "default"))
     repeat = int(experiment.get("repeat", 1))
 
-    camera = Camera(index=int(cfg.get("camera", {}).get("index", 0)))
+    camera_cfg = cfg.get("camera", {})
+    camera = Camera(
+        index=int(camera_cfg.get("index", 0)),
+        width=camera_cfg.get("width"),
+        height=camera_cfg.get("height"),
+    )
 
-    processed_frames = 0
     failed_frames = 0
     last_result: TaskResult | None = None
     label_counts: Counter[str] = Counter()
     confidence_values: list[float] = []
     frames_with_detection = 0
+    observed_width = None
+    observed_height = None
 
     print(f"[INFO] Opening webcam index {camera.index}...")
     open_start = time.perf_counter()
     camera.open()
     open_ms = (time.perf_counter() - open_start) * 1000.0
     print(f"[INFO] Webcam opened in {open_ms:.1f} ms")
+
+    if warmup_frames > 0:
+        print(f"[INFO] Warming up camera for {warmup_frames} frames...")
+        _warm_up_camera(camera, warmup_frames)
 
     metrics = RunMetrics()
     capture_started_at = time.perf_counter()
@@ -127,31 +198,27 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
                 failed_frames += 1
                 continue
 
+            frame_idx += 1
+            observed_height, observed_width = frame.shape[:2]
+
             if record_video and writer is None:
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 stem = "_".join(
                     [
-                        _safe_name(task_name),
-                        _safe_name(library_name),
-                        _safe_name(condition),
+                        safe_name(task_name),
+                        safe_name(library_name),
+                        safe_name(condition),
                         f"r{repeat}",
                         ts,
                     ]
                 )
                 video_path = video_dir / f"{stem}.mp4"
-                height, width = frame.shape[:2]
-                writer = _create_video_writer(video_path, fps=20.0, size=(width, height))
+                writer = _create_video_writer(video_path, fps=20.0, size=(observed_width, observed_height))
 
-            frame_idx += 1
             start = time.perf_counter()
             try:
                 last_result = task_runner(frame)
-                if not last_result.get("ok", False):
-                    failed_frames += 1
-                else:
-                    processed_frames += 1
             except Exception as exc:  # noqa: BLE001
-                failed_frames += 1
                 last_result = {
                     "task": task_name,
                     "library": library_name,
@@ -167,6 +234,8 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
             if last_result and last_result.get("ok", False):
                 outputs = last_result.get("outputs", {})
                 detections = outputs.get("detections", []) if isinstance(outputs, dict) else []
+            else:
+                failed_frames += 1
 
             if detections:
                 frames_with_detection += 1
@@ -214,16 +283,31 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
             cv2.destroyAllWindows()
 
     summary = metrics.summary()
-    detection_summary = {
-        "frames_with_detection": frames_with_detection,
-        "detection_rate": (frames_with_detection / max(summary.get("frame_count", 1), 1)),
-        "label_counts": dict(label_counts),
-        "avg_confidence": (
-            (sum(confidence_values) / len(confidence_values)) if confidence_values else None
-        ),
-    }
+    avg_confidence = (sum(confidence_values) / len(confidence_values)) if confidence_values else None
+    reported_resolution = (
+        observed_width,
+        observed_height,
+    ) if observed_width is not None and observed_height is not None else camera.actual_resolution()
+    record = _build_run_record(
+        task_name=task_name,
+        library_name=library_name,
+        condition=condition,
+        repeat=repeat,
+        summary=summary,
+        open_ms=open_ms,
+        warmup_frames=warmup_frames,
+        frames_with_detection=frames_with_detection,
+        label_counts=label_counts,
+        failed_frames=failed_frames,
+        avg_confidence=avg_confidence,
+        resolution=reported_resolution,
+        video_path=video_path,
+    )
 
     run_payload = {
+        "schema_version": 1,
+        "result_type": "live_task_run",
+        "record": record,
         "config": cfg,
         "experiment": {
             "condition": condition,
@@ -232,8 +316,6 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
         "execution": {
             "task": task_name,
             "library": library_name,
-            "processed_frames": processed_frames,
-            "failed_frames": failed_frames,
             "last_result": last_result,
         },
         "timing": {
@@ -244,17 +326,30 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
             },
         },
         "metrics": {
-            "detection_summary": detection_summary,
+            "frames_with_detection": frames_with_detection,
+            "detection_rate": record["detection_rate"],
+            "label_counts": dict(label_counts),
+            "avg_confidence": avg_confidence,
         },
         "artifacts": {
             "video_path": str(video_path) if video_path is not None else None,
+        },
+        "review": {
+            "verdict": None,
+            "notes": None,
         },
         "summary": summary,
     }
 
     out_file = None
     if write_log:
-        out_file = str(write_run_log(run_payload))
+        out_file = str(
+            write_run_log(
+                run_payload,
+                out_dir=log_dir,
+                stem=_build_log_stem(task_name, library_name, condition, repeat),
+            )
+        )
         print(f"Run complete. task={task_name}, library={library_name}, log={out_file}")
 
     return run_payload, out_file

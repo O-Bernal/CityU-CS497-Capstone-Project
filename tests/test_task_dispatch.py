@@ -30,3 +30,11 @@ def test_registry_returns_callable_runner():
     """Task registry should return a callable run function for supported combos."""
     runner = get_task_runner("object_recognition", "opencv")
     assert callable(runner)
+
+
+def test_registry_supports_capstone_task_pairs():
+    """Focused capstone comparison task pairs should resolve cleanly."""
+    face_runner = get_task_runner("human_cues", "mediapipe")
+    ocr_runner = get_task_runner("ocr", "easyocr")
+    assert callable(face_runner)
+    assert callable(ocr_runner)

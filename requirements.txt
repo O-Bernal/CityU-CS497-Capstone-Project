@@ -1,5 +1,7 @@
-﻿opencv-python
+opencv-python
 numpy
 pyyaml
 pandas
 mediapipe
+pytesseract
+easyocr

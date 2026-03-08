@@ -1,12 +1,20 @@
-﻿camera:
-  index: 0
-
-run:
-  max_frames: 120
-
 task:
   name: ocr
-  library: tesseract
   libraries:
     - tesseract
     - easyocr
+
+ocr:
+  tesseract_cmd:
+
+dataset:
+  name: ocr_comparison
+  image_dir: data/ocr_dataset
+  recursive: true
+  patterns:
+    - "*.png"
+    - "*.jpg"
+    - "*.jpeg"
+    - "*.bmp"
+  log_dir: data/logs/ocr
+  summary_dir: results/summaries

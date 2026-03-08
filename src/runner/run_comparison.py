@@ -1,12 +1,18 @@
-﻿"""Execute a configured comparison matrix across tasks, libraries, and conditions."""
+"""Execute a configured comparison matrix across tasks, libraries, and conditions."""
 
 import argparse
 import copy
-from datetime import datetime
 import json
 from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.core.config import load_config
+from src.core.logging_utils import safe_name, timestamp_string, write_run_log
+from src.core.reporting import write_csv_rows
 from src.runner.run_single_task import run_task
 from src.tasks.registry import TASK_MODULES
 
@@ -40,13 +46,25 @@ def _expand_matrix(comp_cfg: dict) -> list[tuple[str, str, str, int]]:
     return all_pairs
 
 
-def _show_condition_preview(camera_index: int, condition: str) -> bool:
+def _build_log_stem(task_name: str, library_name: str, condition: str, repeat: int) -> str:
+    """Build a readable log filename stem for one experiment run."""
+    return "_".join(
+        [
+            safe_name(task_name),
+            safe_name(library_name),
+            safe_name(condition),
+            f"r{repeat}",
+        ]
+    )
+
+
+def _show_condition_preview(camera_index: int, condition: str, width: int | None, height: int | None) -> bool:
     """Show a live setup preview and wait for SPACE to start condition runs."""
     import cv2
 
     from src.core.camera import Camera
 
-    cam = Camera(index=camera_index)
+    cam = Camera(index=camera_index, width=width, height=height)
     cam.open()
     try:
         while True:
@@ -84,7 +102,13 @@ def _show_condition_preview(camera_index: int, condition: str) -> bool:
 
 
 def _wait_for_condition_ready(
-    *, condition: str, camera_index: int, interactive: bool, preview: bool
+    *,
+    condition: str,
+    camera_index: int,
+    width: int | None,
+    height: int | None,
+    interactive: bool,
+    preview: bool,
 ) -> bool:
     """Gate each condition so the user can physically set the environment first."""
     if not interactive:
@@ -96,7 +120,7 @@ def _wait_for_condition_ready(
 
     if preview:
         print("[SETUP] Opening preview. Press SPACE to start this condition, ESC to cancel.")
-        return _show_condition_preview(camera_index, condition)
+        return _show_condition_preview(camera_index, condition, width, height)
 
     answer = input("[SETUP] Press Enter to start, or type 'q' to stop: ").strip().lower()
     return answer != "q"
@@ -128,7 +152,7 @@ def _prompt_run_verdict(*, enabled: bool) -> tuple[bool, dict]:
 
 
 def main() -> None:
-    """Run all configured comparison experiments and write a summary artifact."""
+    """Run all configured comparison experiments and write summary artifacts."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
     args = parser.parse_args()
@@ -142,8 +166,14 @@ def main() -> None:
 
     interactive_conditions = bool(comp_cfg.get("interactive_conditions", True))
     condition_preview = bool(comp_cfg.get("condition_preview", True))
-    pause_after_run = bool(comp_cfg.get("pause_after_run", True))
-    camera_index = int(base_cfg.get("camera", {}).get("index", 0))
+    pause_after_run = bool(comp_cfg.get("pause_after_run", False))
+    camera_cfg = base_cfg.get("camera", {})
+    camera_index = int(camera_cfg.get("index", 0))
+    camera_width = int(camera_cfg["width"]) if camera_cfg.get("width") is not None else None
+    camera_height = int(camera_cfg["height"]) if camera_cfg.get("height") is not None else None
+    comparison_name = str(comp_cfg.get("name", "comparison"))
+    log_dir = str(comp_cfg.get("log_dir", "data/logs/comparison"))
+    summary_dir = Path(comp_cfg.get("summary_dir", "results/summaries"))
 
     total = len(experiments)
     print(f"[INFO] Running {total} comparison experiments...")
@@ -155,6 +185,8 @@ def main() -> None:
             ready = _wait_for_condition_ready(
                 condition=condition,
                 camera_index=camera_index,
+                width=camera_width,
+                height=camera_height,
                 interactive=interactive_conditions,
                 preview=condition_preview,
             )
@@ -179,55 +211,68 @@ def main() -> None:
             cfg["run"]["max_frames"] = comp_cfg["max_frames"]
         if "max_seconds" in comp_cfg:
             cfg["run"]["max_seconds"] = comp_cfg["max_seconds"]
+        if "warmup_frames" in comp_cfg:
+            cfg["run"]["warmup_frames"] = comp_cfg["warmup_frames"]
         if "record_video" in comp_cfg:
             cfg["run"]["record_video"] = bool(comp_cfg["record_video"])
         if "video_dir" in comp_cfg:
             cfg["run"]["video_dir"] = comp_cfg["video_dir"]
         if "show_preview" in comp_cfg:
             cfg["run"]["show_preview"] = bool(comp_cfg["show_preview"])
+        cfg["run"]["log_dir"] = log_dir
 
         cfg["experiment"] = {
             "condition": condition,
             "repeat": repeat,
         }
 
-        payload, log_path = run_task(cfg, write_log=True)
+        payload, _unused_log_path = run_task(cfg, write_log=False)
         should_continue, review = _prompt_run_verdict(enabled=pause_after_run)
 
-        run_summaries.append(
-            {
-                "task": task,
-                "library": library,
-                "condition": condition,
-                "repeat": repeat,
-                "log_path": log_path,
-                "summary": payload.get("summary", {}),
-                "timing": payload.get("timing", {}),
-                "metrics": payload.get("metrics", {}),
-                "artifacts": payload.get("artifacts", {}),
-                "execution": payload.get("execution", {}),
-                "review": review,
-            }
+        payload["review"] = review
+        record = dict(payload.get("record", {}))
+        record["verdict"] = review.get("verdict")
+        record["notes"] = review.get("notes")
+        payload["record"] = record
+
+        log_path = write_run_log(
+            payload,
+            out_dir=log_dir,
+            stem=_build_log_stem(task, library, condition, repeat),
         )
+
+        run_row = dict(record)
+        run_row["log_path"] = str(log_path)
+        run_summaries.append(run_row)
 
         if not should_continue:
             print("[INFO] Comparison stopped by user during run review.")
             break
 
-    out_dir = Path("results/summaries")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_path = out_dir / f"comparison_{ts}.json"
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    ts = timestamp_string()
+    summary_stem = safe_name(comparison_name)
 
-    out_payload = {
-        "source_config": args.config,
-        "generated_at": ts,
-        "count": len(run_summaries),
-        "runs": run_summaries,
-    }
-    out_path.write_text(json.dumps(out_payload, indent=2), encoding="utf-8")
+    json_path = summary_dir / f"{summary_stem}_{ts}.json"
+    csv_path = summary_dir / f"{summary_stem}_{ts}.csv"
 
-    print(f"[INFO] Comparison complete. Summary: {out_path}")
+    json_path.write_text(
+        json.dumps(
+            {
+                "source_config": args.config,
+                "comparison_name": comparison_name,
+                "generated_at": ts,
+                "count": len(run_summaries),
+                "runs": run_summaries,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    write_csv_rows(run_summaries, csv_path)
+
+    print(f"[INFO] Comparison complete. Summary JSON: {json_path}")
+    print(f"[INFO] Comparison complete. Summary CSV: {csv_path}")
 
 
 if __name__ == "__main__":

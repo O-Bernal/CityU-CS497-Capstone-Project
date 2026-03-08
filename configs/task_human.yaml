@@ -1,8 +1,16 @@
-﻿camera:
+camera:
   index: 0
+  width: 640
+  height: 480
 
 run:
-  max_frames: 120
+  max_frames: 180
+  max_seconds: 6
+  warmup_frames: 15
+  show_preview: true
+  record_video: false
+  video_dir: data/captures/face_detection
+  log_dir: data/logs/face_detection
 
 task:
   name: human_cues

@@ -11,7 +11,7 @@ TASK_MODULES = {
     ("ocr", "tesseract"): "src.tasks.ocr.tesseract_impl",
     ("ocr", "easyocr"): "src.tasks.ocr.easyocr_impl",
     ("human_cues", "opencv"): "src.tasks.human_cues.face_detection_impl",
-    ("human_cues", "mediapipe"): "src.tasks.human_cues.pose_or_gesture_impl",
+    ("human_cues", "mediapipe"): "src.tasks.human_cues.mediapipe_face_detection_impl",
 }
 
 
