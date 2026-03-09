@@ -18,3 +18,6 @@ task:
   libraries:
     - opencv
     - mediapipe
+
+mediapipe:
+  face_detector_model: models/mediapipe/blaze_face_short_range.tflite

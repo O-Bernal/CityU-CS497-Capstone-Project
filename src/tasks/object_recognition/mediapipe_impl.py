@@ -1,53 +1,118 @@
-﻿"""MediaPipe object-recognition adapter using bundled face detection."""
+"""MediaPipe object-recognition adapter using the Tasks object detector API."""
+
+from __future__ import annotations
+
+from pathlib import Path
 
 from src.tasks.interface import TaskResult, make_result
+from src.tasks.object_recognition.reference_baseline import DEFAULT_EMBEDDER_MODEL
+
+
+def _resolve_model_path() -> Path:
+    """Resolve the configured MediaPipe object-detector model path."""
+    cfg = getattr(run, "_capstone_config", {}) or {}
+    mediapipe_cfg = cfg.get("mediapipe", {}) if isinstance(cfg, dict) else {}
+    configured = (
+        mediapipe_cfg.get("object_detector_model")
+        or mediapipe_cfg.get("image_embedder_model")
+    )
+    model_path = Path(configured) if configured else DEFAULT_EMBEDDER_MODEL
+    if not model_path.is_absolute():
+        model_path = Path(__file__).resolve().parents[3] / model_path
+    return model_path
 
 
 def run(frame) -> TaskResult:
-    """Run MediaPipe face detection if available and return standardized detections."""
+    """Detect objects in the webcam frame using MediaPipe Tasks."""
     try:
         import mediapipe as mp
+        from mediapipe.tasks.python import vision
+        from mediapipe.tasks.python.core.base_options import BaseOptions
     except ImportError:
         return make_result(
             task="object_recognition",
             library="mediapipe",
             ok=False,
-            error="mediapipe is not installed. Install it to run this adapter.",
+            error="mediapipe Tasks vision API is not available for object recognition.",
         )
 
-    detector = run._detector if hasattr(run, "_detector") else None
-    if detector is None:
-        detector = mp.solutions.face_detection.FaceDetection(
-            model_selection=0,
-            min_detection_confidence=0.35,
+    model_path = _resolve_model_path()
+    detector = getattr(run, "_detector", None)
+    detector_model_path = getattr(run, "_detector_model_path", None)
+    if detector is None or detector_model_path != str(model_path):
+        if not model_path.exists():
+            return make_result(
+                task="object_recognition",
+                library="mediapipe",
+                ok=False,
+                error=(
+                    f"MediaPipe object detector model not found: {model_path}. "
+                    "Set mediapipe.object_detector_model to a compatible .tflite file."
+                ),
+            )
+
+        options = vision.ObjectDetectorOptions(
+            base_options=BaseOptions(model_asset_path=str(model_path)),
+            running_mode=vision.RunningMode.IMAGE,
+            score_threshold=0.25,
+            max_results=5,
         )
+        detector = vision.ObjectDetector.create_from_options(options)
         run._detector = detector
+        run._detector_model_path = str(model_path)
 
     import cv2
 
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = detector.process(rgb)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+    try:
+        results = detector.detect(mp_image)
+    except Exception as exc:  # noqa: BLE001
+        return make_result(
+            task="object_recognition",
+            library="mediapipe",
+            ok=False,
+            error=str(exc),
+        )
 
     detections = []
-    if results.detections:
-        h, w = frame.shape[:2]
-        for det in results.detections:
-            bbox = det.location_data.relative_bounding_box
-            x = max(int(bbox.xmin * w), 0)
-            y = max(int(bbox.ymin * h), 0)
-            bw = max(int(bbox.width * w), 0)
-            bh = max(int(bbox.height * h), 0)
-            score = det.score[0] if det.score else None
-            detections.append(
-                {
-                    "label": "face",
-                    "confidence": float(score) if score is not None else None,
-                    "bbox": [x, y, bw, bh],
-                }
-            )
+    best_label = None
+    best_score = -1.0
+    scores: dict[str, float] = {}
+
+    for det in getattr(results, "detections", []) or []:
+        bbox = det.bounding_box
+        category = det.categories[0] if getattr(det, "categories", None) else None
+        label = getattr(category, "category_name", None) or getattr(category, "display_name", None) or "object"
+        score = float(category.score) if category is not None and getattr(category, "score", None) is not None else None
+        if score is not None:
+            prior = scores.get(label, 0.0)
+            if score > prior:
+                scores[label] = round(score, 4)
+            if score > best_score:
+                best_score = score
+                best_label = label
+
+        detections.append(
+            {
+                "label": str(label),
+                "confidence": score,
+                "bbox": [
+                    int(getattr(bbox, "origin_x", 0)),
+                    int(getattr(bbox, "origin_y", 0)),
+                    int(getattr(bbox, "width", 0)),
+                    int(getattr(bbox, "height", 0)),
+                ],
+            }
+        )
 
     return make_result(
         task="object_recognition",
         library="mediapipe",
-        outputs={"detections": detections},
+        outputs={
+            "detections": detections,
+            "scores": scores,
+            "matched_label": best_label,
+        },
     )

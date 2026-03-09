@@ -96,6 +96,8 @@ def _build_run_record(
     avg_confidence: float | None,
     resolution: tuple[int | None, int | None],
     video_path: Path | None,
+    output_text: str | None,
+    matched_label: str | None,
 ) -> dict:
     """Create a flat record used by JSON logs and CSV summary exports."""
     frames_processed = int(summary.get("frame_count", 0))
@@ -118,6 +120,8 @@ def _build_run_record(
         "detection_rate": (frames_with_detection / frames_processed) if frames_processed else 0.0,
         "label_counts": dict(label_counts),
         "avg_confidence": avg_confidence,
+        "output_text": output_text,
+        "matched_label": matched_label,
         "video_path": str(video_path) if video_path is not None else None,
         "verdict": None,
         "notes": None,
@@ -133,6 +137,7 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
 
     library_name = select_library(task_cfg)
     task_runner = get_task_runner(task_name, library_name)
+    setattr(task_runner, "_capstone_config", cfg)
 
     run_cfg = cfg.get("run", {})
     max_frames = int(run_cfg.get("max_frames", 120))
@@ -162,6 +167,8 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
     frames_with_detection = 0
     observed_width = None
     observed_height = None
+    last_output_text = None
+    last_matched_label = None
 
     print(f"[INFO] Opening webcam index {camera.index}...")
     open_start = time.perf_counter()
@@ -234,6 +241,17 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
             if last_result and last_result.get("ok", False):
                 outputs = last_result.get("outputs", {})
                 detections = outputs.get("detections", []) if isinstance(outputs, dict) else []
+                if isinstance(outputs, dict):
+                    raw_text = outputs.get("text")
+                    if raw_text:
+                        cleaned_text = str(raw_text).strip()
+                        if cleaned_text:
+                            last_output_text = cleaned_text
+                    raw_label = outputs.get("matched_label")
+                    if raw_label:
+                        cleaned_label = str(raw_label).strip()
+                        if cleaned_label:
+                            last_matched_label = cleaned_label
             else:
                 failed_frames += 1
 
@@ -271,6 +289,26 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
                     (255, 255, 255),
                     2,
                 )
+                if last_output_text:
+                    cv2.putText(
+                        preview,
+                        last_output_text[:80],
+                        (10, 75),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0, 220, 255),
+                        2,
+                    )
+                elif last_matched_label:
+                    cv2.putText(
+                        preview,
+                        f"match {last_matched_label}",
+                        (10, 75),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (0, 220, 255),
+                        2,
+                    )
                 cv2.imshow("Run Preview", preview)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
                     print("[INFO] Preview quit requested; ending run early.")
@@ -302,6 +340,8 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
         avg_confidence=avg_confidence,
         resolution=reported_resolution,
         video_path=video_path,
+        output_text=last_output_text,
+        matched_label=last_matched_label,
     )
 
     run_payload = {

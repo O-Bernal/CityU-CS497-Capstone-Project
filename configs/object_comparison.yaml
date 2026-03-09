@@ -1,0 +1,48 @@
+camera:
+  index: 0
+  width: 640
+  height: 480
+
+run:
+  max_frames: 150
+  max_seconds: 10
+  warmup_frames: 10
+  show_preview: true
+  log_dir: data/logs/object_recognition
+
+comparison:
+  name: object_recognition_comparison
+  max_frames: 150
+  max_seconds: 10
+  warmup_frames: 10
+  repeats: 3
+  interactive_conditions: true
+  condition_preview: true
+  pause_before_run: true
+  show_preview: true
+  log_dir: data/logs/object_recognition
+  summary_dir: results/summaries
+  task_libraries:
+    object_recognition:
+      - opencv
+      - mediapipe
+  conditions:
+    - bottle_centered
+    - cup_centered
+    - book_centered
+    - cell_phone_centered
+
+mediapipe:
+  object_detector_model: models/mediapipe/efficientdet_lite0.tflite
+
+opencv_dnn:
+  model: models/opencv/frozen_inference_graph.pb
+  config: models/opencv/ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt
+  confidence_threshold: 0.15
+  nms_threshold: 0.4
+  enforce_target_labels: false
+  target_labels:
+    - bottle
+    - cup
+    - book
+    - cell phone

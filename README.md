@@ -1,30 +1,80 @@
 # CityU CS497 Capstone Project
 
-Task-focused comparison pipeline for a capstone study on webcam face detection and OCR.
+Reduced-scope computer vision comparison pipeline for a capstone study using live webcam runs.
 
 ## Scope
 - Face detection comparison
-  - OpenCV Haar face/person baseline
-  - MediaPipe face detection
+  - OpenCV Haar face detector
+  - MediaPipe face detector
+- Object recognition comparison
+  - OpenCV DNN object detector
+  - MediaPipe object detector
 - OCR comparison
   - Tesseract
   - EasyOCR
 
 ## Repo Layout
 - `src/core`: shared camera, config, logging, metrics, and CSV reporting helpers
-- `src/tasks`: task-library adapters
-- `src/runner`: live face comparison and OCR dataset runners
-- `configs`: focused run configs for face detection and OCR
-- `data/logs`: raw JSON run logs
-- `results/summaries`: timestamped CSV/JSON outputs for experiments
-- `results/tables`: regenerated summary tables for paper use
+- `src/tasks`: task-library adapters for face detection, object recognition, and OCR
+- `src/runner`: live comparison runner, single-task runner, dataset OCR runner, and export runner
+- `configs`: task and comparison configs
+- `models`: local detector model files for MediaPipe and OpenCV
+- `data/logs`: raw JSON logs from live and dataset runs
+- `results/summaries`: timestamped comparison JSON/CSV outputs
+- `results/tables`: exported analysis-ready summary tables
 
-## Quick Start
-1. Create a virtual environment.
-2. Install dependencies from `requirements.txt`.
-3. Install the Tesseract executable separately. On Windows, a typical path is `C:\Program Files\Tesseract-OCR\tesseract.exe`.
-4. If Tesseract is not on `PATH`, set `ocr.tesseract_cmd` in `configs/task_ocr.yaml` or set the `TESSERACT_CMD` environment variable.
-5. Place OCR dataset images under `data/ocr_dataset`, preferably grouped by condition folder.
-6. Run `python -m src.runner.run_comparison --config configs/face_comparison.yaml`.
-7. Run `python -m src.runner.run_ocr_dataset --config configs/task_ocr.yaml`.
-8. Run `python scripts/export_results.py`.
+## Current Workflow
+Run commands from the repo root with the project interpreter:
+
+```powershell
+.\.venv\Scripts\python.exe
+```
+
+## Required Models
+- Face detection, MediaPipe:
+  - `models/mediapipe/blaze_face_short_range.tflite`
+- Object recognition, MediaPipe:
+  - `models/mediapipe/efficientdet_lite0.tflite`
+- Object recognition, OpenCV DNN:
+  - `models/opencv/frozen_inference_graph.pb`
+  - `models/opencv/ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt`
+
+If your filenames differ, update the corresponding YAML config paths.
+
+## Main Commands
+- Face comparison:
+```powershell
+.\.venv\Scripts\python.exe -m src.runner.run_comparison --config configs/face_comparison.yaml
+```
+
+- Object comparison:
+```powershell
+.\.venv\Scripts\python.exe -m src.runner.run_comparison --config configs/object_comparison.yaml
+```
+
+- OCR comparison:
+```powershell
+.\.venv\Scripts\python.exe -m src.runner.run_comparison --config configs/ocr_comparison_live.yaml
+```
+
+- Single live task run:
+```powershell
+.\.venv\Scripts\python.exe -m src.runner.run_single_task --config configs/task_human.yaml
+.\.venv\Scripts\python.exe -m src.runner.run_single_task --config configs/task_object.yaml
+.\.venv\Scripts\python.exe -m src.runner.run_single_task --config configs/task_ocr_live.yaml
+```
+
+- Export CSV tables from collected logs:
+```powershell
+.\.venv\Scripts\python.exe -m src.runner.export_results
+```
+
+## Notes
+- `configs/task_ocr_live.yaml` runs one OCR engine at a time using `task.library`.
+- `configs/ocr_comparison_live.yaml` is the correct config for Tesseract vs EasyOCR comparison.
+- Object comparison conditions are tuned for detector-friendly classes:
+  - `bottle`
+  - `cup`
+  - `book`
+  - `cell phone`
+- `results/tables` is the main output for report analysis. Figures can be generated later outside the repo from the exported CSVs.

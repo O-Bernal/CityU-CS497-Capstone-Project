@@ -1,0 +1,21 @@
+camera:
+  index: 0
+  width: 640
+  height: 480
+
+run:
+  max_frames: 150
+  max_seconds: 10
+  warmup_frames: 10
+  show_preview: true
+  log_dir: data/logs/ocr_live
+
+task:
+  name: ocr
+  library: easyocr
+  libraries:
+    - tesseract
+    - easyocr
+
+ocr:
+  tesseract_cmd:

@@ -126,29 +126,17 @@ def _wait_for_condition_ready(
     return answer != "q"
 
 
-def _prompt_run_verdict(*, enabled: bool) -> tuple[bool, dict]:
-    """Collect reviewer verdict after each run and optionally stop the campaign."""
+def _wait_for_run_ready(*, enabled: bool, task: str, library: str, condition: str, repeat: int) -> bool:
+    """Optionally gate each run so the operator can start each repeat deliberately."""
     if not enabled:
-        return True, {"verdict": None, "notes": None}
+        return True
 
-    print("[REVIEW] Enter verdict: [c]orrect, [i]ncorrect, [u]ncertain, [q]uit")
-    while True:
-        verdict_raw = input("[REVIEW] Verdict: ").strip().lower()
-        if verdict_raw in {"c", "correct"}:
-            verdict = "correct"
-            break
-        if verdict_raw in {"i", "incorrect"}:
-            verdict = "incorrect"
-            break
-        if verdict_raw in {"u", "uncertain"}:
-            verdict = "uncertain"
-            break
-        if verdict_raw in {"q", "quit"}:
-            return False, {"verdict": "quit", "notes": None}
-        print("[REVIEW] Invalid input. Use c / i / u / q.")
-
-    notes = input("[REVIEW] Optional notes (Enter to skip): ").strip()
-    return True, {"verdict": verdict, "notes": notes or None}
+    print(
+        f"[RUN] Ready: task={task}, library={library}, condition={condition}, repeat={repeat}. "
+        "Press Enter to start or type 'q' to stop."
+    )
+    answer = input("[RUN] Start run: ").strip().lower()
+    return answer != "q"
 
 
 def main() -> None:
@@ -166,7 +154,7 @@ def main() -> None:
 
     interactive_conditions = bool(comp_cfg.get("interactive_conditions", True))
     condition_preview = bool(comp_cfg.get("condition_preview", True))
-    pause_after_run = bool(comp_cfg.get("pause_after_run", False))
+    pause_before_run = bool(comp_cfg.get("pause_before_run", False))
     camera_cfg = base_cfg.get("camera", {})
     camera_index = int(camera_cfg.get("index", 0))
     camera_width = int(camera_cfg["width"]) if camera_cfg.get("width") is not None else None
@@ -198,6 +186,15 @@ def main() -> None:
         print(
             f"[INFO] ({idx}/{total}) task={task}, library={library}, condition={condition}, repeat={repeat}"
         )
+        if not _wait_for_run_ready(
+            enabled=pause_before_run,
+            task=task,
+            library=library,
+            condition=condition,
+            repeat=repeat,
+        ):
+            print("[INFO] Comparison stopped before run start.")
+            break
 
         cfg = copy.deepcopy(base_cfg)
         cfg["task"] = {
@@ -227,8 +224,7 @@ def main() -> None:
         }
 
         payload, _unused_log_path = run_task(cfg, write_log=False)
-        should_continue, review = _prompt_run_verdict(enabled=pause_after_run)
-
+        review = {"verdict": None, "notes": None}
         payload["review"] = review
         record = dict(payload.get("record", {}))
         record["verdict"] = review.get("verdict")
@@ -244,10 +240,6 @@ def main() -> None:
         run_row = dict(record)
         run_row["log_path"] = str(log_path)
         run_summaries.append(run_row)
-
-        if not should_continue:
-            print("[INFO] Comparison stopped by user during run review.")
-            break
 
     summary_dir.mkdir(parents=True, exist_ok=True)
     ts = timestamp_string()

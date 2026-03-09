@@ -19,6 +19,7 @@ comparison:
   repeats: 3
   interactive_conditions: true
   condition_preview: true
+  pause_before_run: true
   pause_after_run: false
   show_preview: true
   record_video: false
@@ -31,5 +32,7 @@ comparison:
       - mediapipe
   conditions:
     - bright_clean
-    - normal_cluttered
     - dim_cluttered_far
+
+mediapipe:
+  face_detector_model: models/mediapipe/blaze_face_short_range.tflite
