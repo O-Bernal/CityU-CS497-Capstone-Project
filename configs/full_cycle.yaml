@@ -1,0 +1,72 @@
+camera:
+  index: 0
+  width: 640
+  height: 480
+
+comparison:
+  name: full_cycle
+  repeats: 1
+  interactive_conditions: true
+  condition_preview: true
+  pause_before_run: true
+  export_after_run: true
+  export_logs_root: data/logs
+  export_output_dir: results/tables
+  log_dir: data/logs/full_cycle
+  summary_dir: results/summaries
+  task_libraries:
+    human_cues:
+      - opencv
+      - mediapipe
+    object_recognition:
+      - opencv
+      - mediapipe
+    ocr:
+      - tesseract
+      - easyocr
+  task_conditions:
+    human_cues:
+      - bright_clean
+      - dim_cluttered_far
+    object_recognition:
+      - bottle_centered
+      - cup_centered
+      - book_centered
+      - cell_phone_centered
+    ocr:
+      - bright_handwritten_note_near
+      - dim_handwritten_note_far
+  task_run_overrides:
+    human_cues:
+      max_seconds: 6
+      warmup_frames: 15
+      show_preview: true
+      record_video: false
+      video_dir: data/captures/face_detection
+    object_recognition:
+      max_seconds: 10
+      warmup_frames: 10
+      show_preview: true
+    ocr:
+      max_seconds: 10
+      warmup_frames: 10
+      show_preview: true
+
+mediapipe:
+  face_detector_model: models/mediapipe/blaze_face_short_range.tflite
+  object_detector_model: models/mediapipe/efficientdet_lite0.tflite
+
+opencv_dnn:
+  model: models/opencv/frozen_inference_graph.pb
+  config: models/opencv/ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt
+  confidence_threshold: 0.5
+  nms_threshold: 0.4
+  enforce_target_labels: true
+  target_labels:
+    - bottle
+    - cup
+    - book
+    - cell phone
+
+ocr:
+  tesseract_cmd:

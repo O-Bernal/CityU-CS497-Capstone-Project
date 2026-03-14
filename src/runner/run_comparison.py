@@ -13,14 +13,16 @@ if str(REPO_ROOT) not in sys.path:
 from src.core.config import load_config
 from src.core.logging_utils import safe_name, timestamp_string, write_run_log
 from src.core.reporting import write_csv_rows
+from src.runner.export_results import export_logs
 from src.runner.run_single_task import run_task
 from src.tasks.registry import TASK_MODULES
 
 
 def _expand_matrix(comp_cfg: dict) -> list[tuple[str, str, str, int]]:
     """Build the set of (task, library, condition, repeat) experiments to run."""
-    conditions = comp_cfg.get("conditions", ["default"]) or ["default"]
+    default_conditions = comp_cfg.get("conditions", ["default"]) or ["default"]
     repeats = int(comp_cfg.get("repeats", 1))
+    task_conditions = comp_cfg.get("task_conditions", {})
 
     task_libraries = comp_cfg.get("task_libraries")
     if isinstance(task_libraries, dict) and task_libraries:
@@ -29,13 +31,16 @@ def _expand_matrix(comp_cfg: dict) -> list[tuple[str, str, str, int]]:
         tasks = comp_cfg.get("tasks", [])
 
     all_pairs = []
-    for condition in conditions:
-        for task in tasks:
-            if isinstance(task_libraries, dict) and task in task_libraries:
-                libs = task_libraries[task]
-            else:
-                libs = comp_cfg.get("libraries", [])
+    for task in tasks:
+        if isinstance(task_libraries, dict) and task in task_libraries:
+            libs = task_libraries[task]
+        else:
+            libs = comp_cfg.get("libraries", [])
 
+        conditions = task_conditions.get(task, default_conditions) if isinstance(task_conditions, dict) else default_conditions
+        conditions = conditions or ["default"]
+
+        for condition in conditions:
             for lib in libs:
                 if (task, lib) not in TASK_MODULES:
                     print(f"[WARN] Skipping unsupported pair: {task}/{lib}")
@@ -162,6 +167,10 @@ def main() -> None:
     comparison_name = str(comp_cfg.get("name", "comparison"))
     log_dir = str(comp_cfg.get("log_dir", "data/logs/comparison"))
     summary_dir = Path(comp_cfg.get("summary_dir", "results/summaries"))
+    task_run_overrides = comp_cfg.get("task_run_overrides", {})
+    export_after_run = bool(comp_cfg.get("export_after_run", True))
+    export_logs_root = comp_cfg.get("export_logs_root", "data/logs")
+    export_output_dir = comp_cfg.get("export_output_dir", "results/tables")
 
     total = len(experiments)
     print(f"[INFO] Running {total} comparison experiments...")
@@ -218,6 +227,11 @@ def main() -> None:
             cfg["run"]["show_preview"] = bool(comp_cfg["show_preview"])
         cfg["run"]["log_dir"] = log_dir
 
+        if isinstance(task_run_overrides, dict):
+            overrides = task_run_overrides.get(task, {})
+            if isinstance(overrides, dict):
+                cfg["run"].update(overrides)
+
         cfg["experiment"] = {
             "condition": condition,
             "repeat": repeat,
@@ -265,6 +279,12 @@ def main() -> None:
 
     print(f"[INFO] Comparison complete. Summary JSON: {json_path}")
     print(f"[INFO] Comparison complete. Summary CSV: {csv_path}")
+
+    if export_after_run:
+        outputs = export_logs(logs_root=export_logs_root, output_dir=export_output_dir)
+        print(f"[INFO] Updated cumulative table: {outputs['face']}")
+        print(f"[INFO] Updated cumulative table: {outputs['object']}")
+        print(f"[INFO] Updated cumulative table: {outputs['ocr']}")
 
 
 if __name__ == "__main__":

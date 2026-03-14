@@ -53,16 +53,10 @@ def _collect_ocr_rows(payload: dict, path: Path) -> list[dict]:
     return rows
 
 
-def main() -> None:
-    """Export paper-ready CSV tables from saved logs."""
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--logs-root", default="data/logs")
-    parser.add_argument("--output-dir", default="results/tables")
-    args = parser.parse_args()
-
-    logs_root = Path(args.logs_root)
-    output_dir = Path(args.output_dir)
-
+def export_logs(*, logs_root: str | Path = "data/logs", output_dir: str | Path = "results/tables") -> dict[str, Path]:
+    """Export paper-ready CSV tables from saved logs and return output paths."""
+    logs_root = Path(logs_root)
+    output_dir = Path(output_dir)
     face_rows = []
     object_rows = []
     ocr_rows = []
@@ -89,9 +83,25 @@ def main() -> None:
     object_path = write_csv_rows(object_rows, output_dir / "object_recognition_summary.csv")
     ocr_path = write_csv_rows(ocr_rows, output_dir / "ocr_summary.csv")
 
-    print(f"Wrote {face_path}")
-    print(f"Wrote {object_path}")
-    print(f"Wrote {ocr_path}")
+    return {
+        "face": face_path,
+        "object": object_path,
+        "ocr": ocr_path,
+    }
+
+
+def main() -> None:
+    """Export paper-ready CSV tables from saved logs."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--logs-root", default="data/logs")
+    parser.add_argument("--output-dir", default="results/tables")
+    args = parser.parse_args()
+
+    outputs = export_logs(logs_root=args.logs_root, output_dir=args.output_dir)
+
+    print(f"Wrote {outputs['face']}")
+    print(f"Wrote {outputs['object']}")
+    print(f"Wrote {outputs['ocr']}")
 
 
 if __name__ == "__main__":

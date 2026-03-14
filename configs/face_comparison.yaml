@@ -16,7 +16,7 @@ comparison:
   name: face_detection_comparison
   max_seconds: 6
   warmup_frames: 15
-  repeats: 3
+  repeats: 1
   interactive_conditions: true
   condition_preview: true
   pause_before_run: true
