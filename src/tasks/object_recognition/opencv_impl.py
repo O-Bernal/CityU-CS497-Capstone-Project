@@ -106,7 +106,7 @@ def configure(cfg: dict[str, Any]) -> None:
     _CONFIG = cfg
 
 
-def _resolve_dnn_config() -> tuple[Path, Path, set[str] | None, float, float]:
+def _resolve_dnn_config() -> tuple[Path, Path, set[str] | None, float, float, int, float]:
     """Resolve model, config, and optional label filter paths from config."""
     cfg = _CONFIG or {}
     dnn_cfg = cfg.get("opencv_dnn", {}) if isinstance(cfg, dict) else {}
@@ -123,7 +123,17 @@ def _resolve_dnn_config() -> tuple[Path, Path, set[str] | None, float, float]:
     filter_enabled = bool(dnn_cfg.get("enforce_target_labels", False))
     confidence_threshold = float(dnn_cfg.get("confidence_threshold", 0.15))
     nms_threshold = float(dnn_cfg.get("nms_threshold", 0.4))
-    return model_path, config_path, (label_filter if filter_enabled else None), confidence_threshold, nms_threshold
+    input_size = int(dnn_cfg.get("input_size", 320))
+    center_crop_fraction = float(dnn_cfg.get("center_crop_fraction", 0.7))
+    return (
+        model_path,
+        config_path,
+        (label_filter if filter_enabled else None),
+        confidence_threshold,
+        nms_threshold,
+        input_size,
+        center_crop_fraction,
+    )
 
 
 def _class_name_for_id(class_id: int) -> str:
@@ -132,6 +142,14 @@ def _class_name_for_id(class_id: int) -> str:
     if 0 <= index < len(DEFAULT_LABELS):
         return DEFAULT_LABELS[index]
     return f"class_{class_id}"
+
+
+def _normalize_label(label: str) -> str:
+    """Normalize detector labels to the shared comparison vocabulary."""
+    lowered = str(label).strip().lower()
+    if lowered == "tv":
+        return "tvmonitor"
+    return lowered
 
 
 def _create_detection_model(cv2_module: Any, model_path: Path, config_path: Path) -> Any:
@@ -145,12 +163,34 @@ def _create_detection_model(cv2_module: Any, model_path: Path, config_path: Path
     return model_factory(str(model_path), str(config_path))
 
 
+def _build_candidate_views(frame, *, center_crop_fraction: float) -> list[dict]:
+    """Build full-frame and center-crop views for detector retries."""
+    height, width = frame.shape[:2]
+    views = [{"image": frame, "offset": (0, 0)}]
+
+    crop_width = max(1, int(width * center_crop_fraction))
+    crop_height = max(1, int(height * center_crop_fraction))
+    x = max(0, (width - crop_width) // 2)
+    y = max(0, (height - crop_height) // 2)
+    cropped = frame[y : y + crop_height, x : x + crop_width]
+    views.insert(0, {"image": cropped, "offset": (x, y)})
+    return views
+
+
 def run(frame) -> TaskResult:
     """Detect objects in the webcam frame using OpenCV DNN."""
     import cv2
 
     global _DETECTOR, _DETECTOR_KEY
-    model_path, config_path, label_filter, confidence_threshold, nms_threshold = _resolve_dnn_config()
+    (
+        model_path,
+        config_path,
+        label_filter,
+        confidence_threshold,
+        nms_threshold,
+        input_size,
+        center_crop_fraction,
+    ) = _resolve_dnn_config()
     detector = _DETECTOR
     detector_key = _DETECTOR_KEY
     expected_key = (str(model_path), str(config_path))
@@ -173,7 +213,7 @@ def run(frame) -> TaskResult:
 
         try:
             net = _create_detection_model(cv2, model_path, config_path)
-            net.setInputSize(320, 320)
+            net.setInputSize(input_size, input_size)
             net.setInputScale(1.0 / 127.5)
             net.setInputMean((127.5, 127.5, 127.5))
             net.setInputSwapRB(True)
@@ -189,12 +229,50 @@ def run(frame) -> TaskResult:
         _DETECTOR_KEY = expected_key
         detector = net
 
+    detections = []
+    scores: dict[str, float] = {}
+    best_label = None
+    best_score = 0.0
+
     try:
-        class_ids, confidences, boxes = detector.detect(
-            frame,
-            confThreshold=confidence_threshold,
-            nmsThreshold=nms_threshold,
-        )
+        for view in _build_candidate_views(frame, center_crop_fraction=center_crop_fraction):
+            class_ids, confidences, boxes = detector.detect(
+                view["image"],
+                confThreshold=confidence_threshold,
+                nmsThreshold=nms_threshold,
+            )
+
+            if class_ids is None or len(class_ids) == 0:
+                continue
+
+            x_offset, y_offset = view["offset"]
+            for class_id, confidence, box in zip(class_ids.flatten(), confidences.flatten(), boxes):
+                label = _normalize_label(_class_name_for_id(int(class_id)))
+                score = float(confidence)
+
+                prior = scores.get(label, 0.0)
+                if score > prior:
+                    scores[label] = round(score, 4)
+
+                if label_filter and label.lower() not in label_filter:
+                    continue
+
+                adjusted_box = [
+                    int(box[0] + x_offset),
+                    int(box[1] + y_offset),
+                    int(box[2]),
+                    int(box[3]),
+                ]
+                detections.append(
+                    {
+                        "label": label,
+                        "confidence": score,
+                        "bbox": adjusted_box,
+                    }
+                )
+                if score > best_score:
+                    best_score = score
+                    best_label = label
     except Exception as exc:  # noqa: BLE001
         return make_result(
             task="object_recognition",
@@ -202,32 +280,6 @@ def run(frame) -> TaskResult:
             ok=False,
             error=str(exc),
         )
-
-    detections = []
-    scores: dict[str, float] = {}
-    best_label = None
-    best_score = 0.0
-
-    if class_ids is not None and len(class_ids) > 0:
-        for class_id, confidence, box in zip(class_ids.flatten(), confidences.flatten(), boxes):
-            label = _class_name_for_id(int(class_id))
-            if label_filter and label.lower() not in label_filter:
-                continue
-
-            score = float(confidence)
-            detections.append(
-                {
-                    "label": label,
-                    "confidence": score,
-                    "bbox": [int(box[0]), int(box[1]), int(box[2]), int(box[3])],
-                }
-            )
-            prior = scores.get(label, 0.0)
-            if score > prior:
-                scores[label] = round(score, 4)
-            if score > best_score:
-                best_score = score
-                best_label = label
 
     return make_result(
         task="object_recognition",

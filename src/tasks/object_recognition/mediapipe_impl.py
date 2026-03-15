@@ -34,6 +34,26 @@ def _resolve_model_path() -> Path:
     return model_path
 
 
+def _resolve_label_filter() -> set[str] | None:
+    """Resolve optional target-label filtering from config."""
+    cfg = _CONFIG or {}
+    mediapipe_cfg = cfg.get("mediapipe", {}) if isinstance(cfg, dict) else {}
+    labels = mediapipe_cfg.get("target_labels")
+    if not labels:
+        return None
+    if not mediapipe_cfg.get("enforce_target_labels", True):
+        return None
+    return {str(label).strip().lower() for label in labels}
+
+
+def _normalize_label(label: str) -> str:
+    """Normalize library-specific labels to the shared comparison vocabulary."""
+    lowered = str(label).strip().lower()
+    if lowered == "tv":
+        return "tvmonitor"
+    return lowered
+
+
 def run(frame) -> TaskResult:
     """Detect objects in the webcam frame using MediaPipe Tasks."""
     try:
@@ -49,6 +69,7 @@ def run(frame) -> TaskResult:
         )
 
     model_path = _resolve_model_path()
+    label_filter = _resolve_label_filter()
     global _DETECTOR, _DETECTOR_MODEL_PATH
     detector = _DETECTOR
     detector_model_path = _DETECTOR_MODEL_PATH
@@ -97,7 +118,10 @@ def run(frame) -> TaskResult:
     for det in getattr(results, "detections", []) or []:
         bbox = det.bounding_box
         category = det.categories[0] if getattr(det, "categories", None) else None
-        label = getattr(category, "category_name", None) or getattr(category, "display_name", None) or "object"
+        raw_label = getattr(category, "category_name", None) or getattr(category, "display_name", None) or "object"
+        label = _normalize_label(raw_label)
+        if label_filter and label not in label_filter:
+            continue
         score = float(category.score) if category is not None and getattr(category, "score", None) is not None else None
         if score is not None:
             prior = scores.get(label, 0.0)
@@ -109,7 +133,7 @@ def run(frame) -> TaskResult:
 
         detections.append(
             {
-                "label": str(label),
+                "label": label,
                 "confidence": score,
                 "bbox": [
                     int(getattr(bbox, "origin_x", 0)),

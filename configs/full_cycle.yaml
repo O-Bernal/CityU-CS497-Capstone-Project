@@ -29,10 +29,7 @@ comparison:
       - bright_clean
       - dim_cluttered_far
     object_recognition:
-      - bottle_centered
-      - cup_centered
-      - book_centered
-      - cell_phone_centered
+      - shared_scene
     ocr:
       - bright_handwritten_note_near
       - dim_handwritten_note_far
@@ -55,6 +52,11 @@ comparison:
 mediapipe:
   face_detector_model: models/mediapipe/blaze_face_short_range.tflite
   object_detector_model: models/mediapipe/efficientdet_lite0.tflite
+  enforce_target_labels: true
+  target_labels:
+    - person
+    - bottle
+    - tvmonitor
 
 opencv_dnn:
   model: models/opencv/frozen_inference_graph.pb
@@ -62,11 +64,12 @@ opencv_dnn:
   confidence_threshold: 0.5
   nms_threshold: 0.4
   enforce_target_labels: true
+  input_size: 640
+  center_crop_fraction: 0.7
   target_labels:
+    - person
     - bottle
-    - cup
-    - book
-    - cell phone
+    - tvmonitor
 
 ocr:
   tesseract_cmd:

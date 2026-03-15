@@ -15,7 +15,7 @@ comparison:
   max_frames: 150
   max_seconds: 10
   warmup_frames: 10
-  repeats: 3
+  repeats: 1
   interactive_conditions: true
   condition_preview: true
   pause_before_run: true
@@ -27,22 +27,25 @@ comparison:
       - opencv
       - mediapipe
   conditions:
-    - bottle_centered
-    - cup_centered
-    - book_centered
-    - cell_phone_centered
+    - shared_scene
 
 mediapipe:
   object_detector_model: models/mediapipe/efficientdet_lite0.tflite
+  enforce_target_labels: true
+  target_labels:
+    - person
+    - bottle
+    - tvmonitor
 
 opencv_dnn:
   model: models/opencv/frozen_inference_graph.pb
   config: models/opencv/ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt
-  confidence_threshold: 0.15
+  confidence_threshold: 0.5
   nms_threshold: 0.4
-  enforce_target_labels: false
+  enforce_target_labels: true
+  input_size: 640
+  center_crop_fraction: 0.7
   target_labels:
+    - person
     - bottle
-    - cup
-    - book
-    - cell phone
+    - tvmonitor
