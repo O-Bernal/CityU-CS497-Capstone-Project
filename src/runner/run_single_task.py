@@ -77,7 +77,7 @@ def _warm_up_camera(camera: Camera, warmup_frames: int) -> int:
     """Discard a fixed number of frames before collecting timed metrics."""
     completed = 0
     while completed < warmup_frames:
-        ok, _frame = camera.read()
+        ok = camera.read()
         if ok:
             completed += 1
     return completed
@@ -417,8 +417,6 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config")
     parser.add_argument("--preset", choices=sorted(TASK_PRESET_CONFIGS))
-    parser.add_argument("--condition")
-    parser.add_argument("--repeat", type=int)
     args = parser.parse_args()
 
     config_path = args.config or (TASK_PRESET_CONFIGS.get(args.preset) if args.preset else None)
@@ -426,12 +424,6 @@ def main() -> None:
         raise ValueError("Provide --config <path> or --preset human|object|ocr.")
 
     cfg = load_config(config_path)
-    if args.condition or args.repeat is not None:
-        cfg.setdefault("experiment", {})
-        if args.condition:
-            cfg["experiment"]["condition"] = args.condition
-        if args.repeat is not None:
-            cfg["experiment"]["repeat"] = args.repeat
     run_task(cfg, write_log=True)
 
 
