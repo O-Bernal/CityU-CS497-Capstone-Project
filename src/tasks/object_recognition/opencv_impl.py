@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from src.tasks.interface import TaskResult, make_result
 
@@ -94,10 +95,20 @@ DEFAULT_LABELS = [
     "toothbrush",
 ]
 
+_CONFIG: dict[str, Any] = {}
+_DETECTOR: Any | None = None
+_DETECTOR_KEY: tuple[str, str] | None = None
 
-def _resolve_dnn_config() -> tuple[Path, Path, set[str] | None]:
+
+def configure(cfg: dict[str, Any]) -> None:
+    """Store run-scoped config for later detector resolution."""
+    global _CONFIG
+    _CONFIG = cfg
+
+
+def _resolve_dnn_config() -> tuple[Path, Path, set[str] | None, float, float]:
     """Resolve model, config, and optional label filter paths from config."""
-    cfg = getattr(run, "_capstone_config", {}) or {}
+    cfg = _CONFIG or {}
     dnn_cfg = cfg.get("opencv_dnn", {}) if isinstance(cfg, dict) else {}
 
     model_path = Path(dnn_cfg.get("model", DEFAULT_MODEL_PATH))
@@ -123,13 +134,25 @@ def _class_name_for_id(class_id: int) -> str:
     return f"class_{class_id}"
 
 
+def _create_detection_model(cv2_module: Any, model_path: Path, config_path: Path) -> Any:
+    """Create an OpenCV DNN detection model across stub/runtime variants."""
+    model_factory = getattr(cv2_module, "dnn_DetectionModel", None)
+    if model_factory is None:
+        dnn_module = getattr(cv2_module, "dnn", None)
+        model_factory = getattr(dnn_module, "DetectionModel", None) if dnn_module is not None else None
+    if model_factory is None:
+        raise RuntimeError("OpenCV build does not expose a DNN DetectionModel constructor.")
+    return model_factory(str(model_path), str(config_path))
+
+
 def run(frame) -> TaskResult:
     """Detect objects in the webcam frame using OpenCV DNN."""
     import cv2
 
+    global _DETECTOR, _DETECTOR_KEY
     model_path, config_path, label_filter, confidence_threshold, nms_threshold = _resolve_dnn_config()
-    detector = getattr(run, "_detector", None)
-    detector_key = getattr(run, "_detector_key", None)
+    detector = _DETECTOR
+    detector_key = _DETECTOR_KEY
     expected_key = (str(model_path), str(config_path))
 
     if detector is None or detector_key != expected_key:
@@ -149,7 +172,7 @@ def run(frame) -> TaskResult:
             )
 
         try:
-            net = cv2.dnn_DetectionModel(str(model_path), str(config_path))
+            net = _create_detection_model(cv2, model_path, config_path)
             net.setInputSize(320, 320)
             net.setInputScale(1.0 / 127.5)
             net.setInputMean((127.5, 127.5, 127.5))
@@ -162,8 +185,8 @@ def run(frame) -> TaskResult:
                 error=str(exc),
             )
 
-        run._detector = net
-        run._detector_key = expected_key
+        _DETECTOR = net
+        _DETECTOR_KEY = expected_key
         detector = net
 
     try:

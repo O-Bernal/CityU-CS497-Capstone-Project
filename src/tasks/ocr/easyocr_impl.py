@@ -1,9 +1,27 @@
 """EasyOCR adapter for saved-image comparison runs."""
 
+from collections.abc import Sequence
+from typing import Any, TypeGuard
+
 from src.tasks.interface import TaskResult, make_result
 
+_READER: Any | None = None
 
-def _bbox_to_xywh(points: list[list[float]]) -> list[int]:
+
+def _is_bbox_points(value: object) -> TypeGuard[Sequence[Sequence[float | int]]]:
+    """Check that a value matches the expected EasyOCR quadrilateral shape."""
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        return False
+
+    for point in value:
+        if isinstance(point, (str, bytes)) or not isinstance(point, Sequence) or len(point) < 2:
+            return False
+        if not all(isinstance(coord, (float, int)) for coord in point[:2]):
+            return False
+    return True
+
+
+def _bbox_to_xywh(points: Sequence[Sequence[float | int]]) -> list[int]:
     """Convert EasyOCR quadrilateral points into x, y, width, height."""
     xs = [int(point[0]) for point in points]
     ys = [int(point[1]) for point in points]
@@ -26,7 +44,8 @@ def run(frame) -> TaskResult:
             error="easyocr is not installed. Install it to run this adapter.",
         )
 
-    reader = getattr(run, "_reader", None)
+    global _READER
+    reader = _READER
     if reader is None:
         try:
             reader = easyocr.Reader(["en"], gpu=False)
@@ -37,7 +56,7 @@ def run(frame) -> TaskResult:
                 ok=False,
                 error=str(exc),
             )
-        run._reader = reader
+        _READER = reader
 
     try:
         results = reader.readtext(frame, detail=1, paragraph=False)
@@ -60,11 +79,12 @@ def run(frame) -> TaskResult:
         if conf_value is not None:
             confidences.append(conf_value)
 
+        bbox_xywh = _bbox_to_xywh(bbox) if _is_bbox_points(bbox) else [0, 0, 0, 0]
         detections.append(
             {
                 "label": "text",
                 "confidence": conf_value,
-                "bbox": _bbox_to_xywh(bbox),
+                "bbox": bbox_xywh,
             }
         )
 

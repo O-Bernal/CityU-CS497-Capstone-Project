@@ -3,14 +3,25 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from src.tasks.interface import TaskResult, make_result
 from src.tasks.object_recognition.reference_baseline import DEFAULT_EMBEDDER_MODEL
 
+_CONFIG: dict[str, Any] = {}
+_DETECTOR: Any | None = None
+_DETECTOR_MODEL_PATH: str | None = None
+
+
+def configure(cfg: dict[str, Any]) -> None:
+    """Store run-scoped config for later model resolution."""
+    global _CONFIG
+    _CONFIG = cfg
+
 
 def _resolve_model_path() -> Path:
     """Resolve the configured MediaPipe object-detector model path."""
-    cfg = getattr(run, "_capstone_config", {}) or {}
+    cfg = _CONFIG or {}
     mediapipe_cfg = cfg.get("mediapipe", {}) if isinstance(cfg, dict) else {}
     configured = (
         mediapipe_cfg.get("object_detector_model")
@@ -37,8 +48,9 @@ def run(frame) -> TaskResult:
         )
 
     model_path = _resolve_model_path()
-    detector = getattr(run, "_detector", None)
-    detector_model_path = getattr(run, "_detector_model_path", None)
+    global _DETECTOR, _DETECTOR_MODEL_PATH
+    detector = _DETECTOR
+    detector_model_path = _DETECTOR_MODEL_PATH
     if detector is None or detector_model_path != str(model_path):
         if not model_path.exists():
             return make_result(
@@ -58,8 +70,8 @@ def run(frame) -> TaskResult:
             max_results=5,
         )
         detector = vision.ObjectDetector.create_from_options(options)
-        run._detector = detector
-        run._detector_model_path = str(model_path)
+        _DETECTOR = detector
+        _DETECTOR_MODEL_PATH = str(model_path)
 
     import cv2
 

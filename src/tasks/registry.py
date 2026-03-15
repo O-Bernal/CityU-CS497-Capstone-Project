@@ -1,7 +1,7 @@
 """Task registry for resolving task+library pairs into runnable callables."""
 
 from importlib import import_module
-from typing import Callable
+from typing import Callable, cast
 
 from src.tasks.interface import TaskResult
 
@@ -29,4 +29,4 @@ def get_task_runner(task_name: str, library_name: str) -> Callable[[object], Tas
     runner = getattr(module, "run", None)
     if not callable(runner):
         raise RuntimeError(f"Module {module_path} does not expose callable run(frame)")
-    return runner
+    return cast(Callable[[object], TaskResult], runner)

@@ -1,5 +1,23 @@
 """Shared webcam wrapper for opening, configuring, and reading camera streams."""
 
+from __future__ import annotations
+
+from typing import Any, Protocol
+
+
+class _CaptureLike(Protocol):
+    """Subset of the OpenCV capture API used by this wrapper."""
+
+    def isOpened(self) -> bool: ...
+
+    def set(self, propId: int, value: float) -> bool: ...
+
+    def read(self) -> tuple[bool, Any]: ...
+
+    def get(self, propId: int) -> float: ...
+
+    def release(self) -> None: ...
+
 
 class Camera:
     """Minimal camera abstraction used by runners and demos."""
@@ -9,9 +27,9 @@ class Camera:
         self.index = index
         self.width = int(width) if width is not None else None
         self.height = int(height) if height is not None else None
-        self.cap = None
+        self.cap: _CaptureLike | None = None
 
-    def _apply_resolution(self, cap) -> None:
+    def _apply_resolution(self, cap: _CaptureLike) -> None:
         """Apply configured width and height to an opened capture device."""
         import cv2
 
@@ -41,7 +59,7 @@ class Camera:
         cap.release()
         raise RuntimeError(f"Unable to open webcam index {self.index}")
 
-    def read(self):
+    def read(self) -> tuple[bool, Any]:
         """Read a single frame from the active webcam stream."""
         if self.cap is None:
             raise RuntimeError("Camera not opened")

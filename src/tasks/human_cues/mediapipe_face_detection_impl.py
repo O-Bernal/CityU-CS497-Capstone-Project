@@ -1,8 +1,19 @@
 """MediaPipe face-detection adapter for the human-cues comparison task."""
 
 from pathlib import Path
+from typing import Any, cast
 
 from src.tasks.interface import TaskResult, make_result
+
+_CONFIG: dict[str, Any] = {}
+_DETECTOR: Any | None = None
+_DETECTOR_MODEL_PATH: str | None = None
+
+
+def configure(cfg: dict[str, Any]) -> None:
+    """Store run-scoped config for later model resolution."""
+    global _CONFIG
+    _CONFIG = cfg
 
 
 def _resolve_tasks_api():
@@ -22,12 +33,18 @@ def _resolve_tasks_api():
     if any(item is None for item in (face_detector, face_detector_options, running_mode)):
         raise RuntimeError("Installed mediapipe package does not expose the MediaPipe Tasks face detector API.")
 
-    return mp, BaseOptions, face_detector, face_detector_options, running_mode
+    return (
+        mp,
+        BaseOptions,
+        cast(Any, face_detector),
+        cast(Any, face_detector_options),
+        cast(Any, running_mode),
+    )
 
 
 def _resolve_model_path() -> Path:
     """Resolve the configured MediaPipe face-detector model path."""
-    cfg = getattr(run, "_capstone_config", {}) or {}
+    cfg = _CONFIG or {}
     mediapipe_cfg = cfg.get("mediapipe", {}) if isinstance(cfg, dict) else {}
     configured = mediapipe_cfg.get("face_detector_model")
     if not configured:
@@ -53,8 +70,9 @@ def run(frame) -> TaskResult:
             error=str(exc),
         )
 
-    detector = getattr(run, "_detector", None)
-    detector_model_path = getattr(run, "_detector_model_path", None)
+    global _DETECTOR, _DETECTOR_MODEL_PATH
+    detector = _DETECTOR
+    detector_model_path = _DETECTOR_MODEL_PATH
     if detector is None or detector_model_path != str(model_path):
         if not model_path.exists():
             return make_result(
@@ -73,8 +91,8 @@ def run(frame) -> TaskResult:
             min_detection_confidence=0.35,
         )
         detector = FaceDetector.create_from_options(options)
-        run._detector = detector
-        run._detector_model_path = str(model_path)
+        _DETECTOR = detector
+        _DETECTOR_MODEL_PATH = str(model_path)
 
     import cv2
 

@@ -1,6 +1,24 @@
 """OpenCV human-cues baseline using a Haar face detector only."""
 
+from pathlib import Path
+from typing import Any
+
 from src.tasks.interface import TaskResult, make_result
+
+_FACE_DETECTOR: Any | None = None
+_CASCADE_FILENAME = "haarcascade_frontalface_default.xml"
+
+
+def _resolve_cascade_path(cv2_module: Any) -> str:
+    """Resolve the Haar cascade path across OpenCV stub variants."""
+    data_dir = getattr(cv2_module, "data", None)
+    haarcascades = getattr(data_dir, "haarcascades", None) if data_dir is not None else None
+    if haarcascades:
+        return str(Path(haarcascades) / _CASCADE_FILENAME)
+
+    package_dir = Path(cv2_module.__file__).resolve().parent
+    fallback = package_dir / "data" / _CASCADE_FILENAME
+    return str(fallback)
 
 
 def _as_detection(label: str, x: int, y: int, w: int, h: int) -> dict:
@@ -16,13 +34,12 @@ def run(frame) -> TaskResult:
     """Detect face regions and return standardized detections."""
     import cv2
 
-    face_detector = getattr(run, "_face_detector", None)
+    global _FACE_DETECTOR
+    face_detector = _FACE_DETECTOR
 
     if face_detector is None:
-        face_detector = cv2.CascadeClassifier(
-            cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-        )
-        run._face_detector = face_detector
+        face_detector = cv2.CascadeClassifier(_resolve_cascade_path(cv2))
+        _FACE_DETECTOR = face_detector
 
     if face_detector.empty():
         return make_result(

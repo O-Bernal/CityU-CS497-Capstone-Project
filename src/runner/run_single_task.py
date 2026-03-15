@@ -3,6 +3,7 @@
 import argparse
 from collections import Counter
 from datetime import datetime
+from importlib import import_module
 from pathlib import Path
 import sys
 import time
@@ -25,7 +26,13 @@ def _create_video_writer(path: Path, fps: float, size: tuple[int, int]):
     import cv2
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    fourcc_factory = getattr(cv2, "VideoWriter_fourcc", None)
+    if fourcc_factory is None:
+        fourcc_factory = getattr(cv2.VideoWriter, "fourcc", None)
+    if fourcc_factory is None:
+        raise RuntimeError("OpenCV build does not expose a VideoWriter fourcc helper.")
+
+    fourcc = fourcc_factory(*"mp4v")
     writer = cv2.VideoWriter(str(path), fourcc, fps, size)
     if writer.isOpened():
         return writer
@@ -137,7 +144,10 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
 
     library_name = select_library(task_cfg)
     task_runner = get_task_runner(task_name, library_name)
-    setattr(task_runner, "_capstone_config", cfg)
+    task_module = import_module(task_runner.__module__)
+    configure_task = getattr(task_module, "configure", None)
+    if callable(configure_task):
+        configure_task(cfg)
 
     run_cfg = cfg.get("run", {})
     max_frames = int(run_cfg.get("max_frames", 120))

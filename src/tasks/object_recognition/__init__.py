@@ -1,0 +1,1 @@
+"""Object recognition task package."""

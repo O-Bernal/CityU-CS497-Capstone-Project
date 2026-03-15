@@ -18,6 +18,7 @@ from src.core.config import load_config
 from src.core.logging_utils import safe_name, timestamp_string, write_run_log
 from src.core.reporting import write_csv_rows
 from src.tasks.registry import get_task_runner
+from src.tasks.interface import TaskResult
 
 
 DEFAULT_PATTERNS = ["*.png", "*.jpg", "*.jpeg", "*.bmp", "*.tif", "*.tiff"]
@@ -46,7 +47,7 @@ def _build_record(
     image_path: Path,
     condition: str,
     runtime_ms: float,
-    result: dict,
+    result: TaskResult,
 ) -> dict:
     """Build a flat OCR record row for JSON logs and CSV export."""
     outputs = result.get("outputs", {}) if result.get("ok", False) else {}
