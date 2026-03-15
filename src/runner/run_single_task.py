@@ -21,6 +21,13 @@ from src.tasks.interface import TaskResult
 from src.tasks.registry import get_task_runner
 
 
+TASK_PRESET_CONFIGS = {
+    "human": "configs/task_human.yaml",
+    "object": "configs/task_object.yaml",
+    "ocr": "configs/task_ocr_live.yaml",
+}
+
+
 def _create_video_writer(path: Path, fps: float, size: tuple[int, int]):
     """Create a video writer for webcam capture output."""
     import cv2
@@ -408,10 +415,15 @@ def run_task(cfg: dict, *, write_log: bool = True) -> tuple[dict, str | None]:
 def main() -> None:
     """Execute a single task run using the provided YAML configuration."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True)
+    parser.add_argument("--config")
+    parser.add_argument("--preset", choices=sorted(TASK_PRESET_CONFIGS))
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
+    config_path = args.config or (TASK_PRESET_CONFIGS.get(args.preset) if args.preset else None)
+    if not config_path:
+        raise ValueError("Provide --config <path> or --preset human|object|ocr.")
+
+    cfg = load_config(config_path)
     run_task(cfg, write_log=True)
 
 

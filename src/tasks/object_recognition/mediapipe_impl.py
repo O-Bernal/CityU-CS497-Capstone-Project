@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from src.tasks.interface import TaskResult, make_result
-from src.tasks.object_recognition.reference_baseline import DEFAULT_EMBEDDER_MODEL
+
+DEFAULT_OBJECT_MODEL = Path(__file__).resolve().parents[3] / "models" / "mediapipe" / "efficientdet_lite0.tflite"
 
 _CONFIG: dict[str, Any] = {}
 _DETECTOR: Any | None = None
@@ -27,7 +28,7 @@ def _resolve_model_path() -> Path:
         mediapipe_cfg.get("object_detector_model")
         or mediapipe_cfg.get("image_embedder_model")
     )
-    model_path = Path(configured) if configured else DEFAULT_EMBEDDER_MODEL
+    model_path = Path(configured) if configured else DEFAULT_OBJECT_MODEL
     if not model_path.is_absolute():
         model_path = Path(__file__).resolve().parents[3] / model_path
     return model_path

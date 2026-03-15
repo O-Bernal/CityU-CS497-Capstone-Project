@@ -33,24 +33,14 @@ def _collect_live_task_row(payload: dict, path: Path, *, task_name: str) -> list
 
 
 def _collect_ocr_rows(payload: dict, path: Path) -> list[dict]:
-    """Extract OCR rows from either live-task or dataset OCR payloads."""
+    """Extract OCR rows from saved OCR payloads."""
     record = payload.get("record")
     if isinstance(record, dict) and record.get("task") == "ocr":
         row = dict(record)
         row["log_path"] = str(path)
         return [row]
 
-    if payload.get("task") != "ocr":
-        return []
-
-    rows = []
-    for record in payload.get("records", []):
-        if not isinstance(record, dict):
-            continue
-        row = dict(record)
-        row["log_path"] = str(path)
-        rows.append(row)
-    return rows
+    return []
 
 
 def export_logs(*, logs_root: str | Path = "data/logs", output_dir: str | Path = "results/tables") -> dict[str, Path]:

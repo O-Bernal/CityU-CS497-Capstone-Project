@@ -16,7 +16,7 @@ Reduced-scope computer vision comparison pipeline for a capstone study using liv
 ## Repo Layout
 - `src/core`: shared camera, config, logging, metrics, and CSV reporting helpers
 - `src/tasks`: task-library adapters for face detection, object recognition, and OCR
-- `src/runner`: live comparison runner, single-task runner, dataset OCR runner, and export runner
+- `src/runner`: live comparison runner, single-task runner, and export runner
 - `configs`: task and comparison configs
 - `models`: local detector model files for MediaPipe and OpenCV
 - `data/logs`: raw JSON logs from live and dataset runs
@@ -62,6 +62,13 @@ If your filenames differ, update the corresponding YAML config paths.
 .\.venv\Scripts\python.exe -m src.runner.run_single_task --config configs/task_human.yaml
 .\.venv\Scripts\python.exe -m src.runner.run_single_task --config configs/task_object.yaml
 .\.venv\Scripts\python.exe -m src.runner.run_single_task --config configs/task_ocr_live.yaml
+```
+
+- Single live task run with presets:
+```powershell
+.\.venv\Scripts\python.exe -m src.runner.run_single_task --preset human
+.\.venv\Scripts\python.exe -m src.runner.run_single_task --preset object
+.\.venv\Scripts\python.exe -m src.runner.run_single_task --preset ocr
 ```
 
 - Export CSV tables from collected logs:

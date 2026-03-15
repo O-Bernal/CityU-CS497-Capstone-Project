@@ -68,7 +68,7 @@ def run(frame) -> TaskResult:
             ok=False,
             error=(
                 "Tesseract executable not found. Install Tesseract OCR and either add it to PATH, "
-                "set TESSERACT_CMD, or set ocr.tesseract_cmd in configs/task_ocr.yaml. "
+                "set TESSERACT_CMD, or set ocr.tesseract_cmd in configs/task_ocr_live.yaml. "
                 f"{detail}"
             ),
         )
